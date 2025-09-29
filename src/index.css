@@ -1,13 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles */
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
+  padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #0f172a;
+  color: #e2e8f0;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Button styles */
+.btn-primary {
+  @apply bg-primary-500 hover:bg-primary-600 text-white font-medium py-2 px-4 rounded-lg transition-colors;
+}
+
+.btn-secondary {
+  @apply bg-background-secondary hover:bg-background-tertiary text-dark-700 font-medium py-2 px-4 rounded-lg transition-colors border border-dark-300;
+}
+
+/* Input styles */
+.textarea-primary {
+  @apply w-full px-3 py-2 bg-background-secondary border border-dark-300 rounded-lg text-dark-700 placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500;
+}
+
+/* Tab styles */
+.tab-button {
+  @apply px-4 py-2 text-sm font-medium rounded-t-lg transition-colors;
+}
+
+.tab-button.active {
+  @apply bg-background-secondary text-white border-b-2 border-primary-500;
+}
+
+.tab-button.inactive {
+  @apply text-dark-500 hover:text-dark-700 hover:bg-background-tertiary;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
