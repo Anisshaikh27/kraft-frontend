@@ -33,6 +33,7 @@ const ActionTypes = {
   SET_LOADING: 'SET_LOADING',
   SET_ERROR: 'SET_ERROR',
   SET_SESSION_ID: 'SET_SESSION_ID',
+  CLEAR_ERROR: 'CLEAR_ERROR',
   
   // Project actions
   SET_CURRENT_PROJECT: 'SET_CURRENT_PROJECT',
@@ -66,6 +67,9 @@ function appReducer(state, action) {
     
     case ActionTypes.SET_ERROR:
       return { ...state, error: action.payload };
+    
+    case ActionTypes.CLEAR_ERROR:
+      return { ...state, error: null };
     
     case ActionTypes.SET_SESSION_ID:
       return { ...state, sessionId: action.payload };
@@ -171,52 +175,123 @@ export function AppProvider({ children }) {
       dispatch({ type: ActionTypes.SET_ERROR, payload: error });
     }, []),
 
-    // Project actions
+    clearError: useCallback(() => {
+      dispatch({ type: ActionTypes.CLEAR_ERROR });
+    }, []),
+
+    // Project actions with enhanced error handling
     createProject: useCallback(async (projectData) => {
       try {
-        actions.setLoading(true);
-        const project = await apiClient.createProject(state.sessionId, projectData);
+        dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+        dispatch({ type: ActionTypes.CLEAR_ERROR });
+        
+        console.log('Creating project with data:', projectData);
+        console.log('Using session ID:', state.sessionId);
+        
+        const response = await apiClient.createProject(state.sessionId, projectData);
+        console.log('Project creation response:', response);
+        
+        // Validate response structure
+        if (!response) {
+          throw new Error('No response received from server');
+        }
+        
+        // Handle different response structures
+        let project;
+        if (response.data && response.data.project) {
+          project = response.data.project;
+        } else if (response.project) {
+          project = response.project;
+        } else if (response.id) {
+          project = response;
+        } else {
+          console.error('Unexpected response structure:', response);
+          throw new Error('Invalid response structure from server');
+        }
+        
+        // Validate project has required fields
+        if (!project.id) {
+          console.error('Project missing ID:', project);
+          throw new Error('Project created but no ID returned');
+        }
+        
         dispatch({ type: ActionTypes.ADD_PROJECT, payload: project });
         dispatch({ type: ActionTypes.SET_CURRENT_PROJECT, payload: project });
+        
+        console.log('Project successfully created with ID:', project.id);
         return project;
       } catch (error) {
-        actions.setError(error.message);
+        console.error('Create project error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to create project';
+        dispatch({ type: ActionTypes.SET_ERROR, payload: errorMessage });
         throw error;
       } finally {
-        actions.setLoading(false);
+        dispatch({ type: ActionTypes.SET_LOADING, payload: false });
       }
     }, [state.sessionId]),
 
     loadProject: useCallback(async (projectId) => {
+      // Validate projectId before making request
+      if (!projectId || projectId === 'undefined' || projectId === 'null') {
+        console.error('Invalid project ID provided:', projectId);
+        throw new Error('Invalid project ID');
+      }
+
       try {
-        actions.setLoading(true);
-        const project = await apiClient.getProject(projectId);
-        dispatch({ type: ActionTypes.SET_CURRENT_PROJECT, payload: project.project });
+        dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+        dispatch({ type: ActionTypes.CLEAR_ERROR });
+        
+        console.log('Loading project with ID:', projectId);
+        const response = await apiClient.getProject(projectId);
+        console.log('Project load response:', response);
+        
+        // Handle different response structures
+        let project, filesData;
+        if (response.data) {
+          project = response.data.project || response.data;
+          filesData = response.data.files || [];
+        } else {
+          project = response.project || response;
+          filesData = response.files || [];
+        }
+        
+        if (!project || !project.id) {
+          throw new Error('Invalid project data received');
+        }
+        
+        dispatch({ type: ActionTypes.SET_CURRENT_PROJECT, payload: project });
         
         // Load project files
-        const filesData = project.files || [];
         const filesMap = new Map();
-        filesData.forEach(file => {
-          filesMap.set(file.path, file);
-        });
+        if (Array.isArray(filesData)) {
+          filesData.forEach(file => {
+            filesMap.set(file.path, file);
+          });
+        }
         dispatch({ type: ActionTypes.SET_FILES, payload: filesMap });
         
-        return project;
+        return { project, files: filesData };
       } catch (error) {
-        actions.setError(error.message);
+        console.error('Load project error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to load project';
+        dispatch({ type: ActionTypes.SET_ERROR, payload: errorMessage });
         throw error;
       } finally {
-        actions.setLoading(false);
+        dispatch({ type: ActionTypes.SET_LOADING, payload: false });
       }
     }, []),
 
     loadProjects: useCallback(async () => {
       try {
-        const projects = await apiClient.getProjects(state.sessionId);
+        console.log('Loading projects for session:', state.sessionId);
+        const response = await apiClient.getProjects(state.sessionId);
+        const projects = response.data || response;
         dispatch({ type: ActionTypes.SET_PROJECTS, payload: projects });
         return projects;
       } catch (error) {
-        actions.setError(error.message);
+        console.error('Load projects error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to load projects';
+        dispatch({ type: ActionTypes.SET_ERROR, payload: errorMessage });
         throw error;
       }
     }, [state.sessionId]),
@@ -230,9 +305,14 @@ export function AppProvider({ children }) {
       dispatch({ type: ActionTypes.TOGGLE_SIDEBAR });
     }, []),
 
-    // File actions
+    // File actions with validation
     createFile: useCallback(async (filePath, content = '', language = 'javascript') => {
-      if (!state.currentProject) return;
+      if (!state.currentProject) {
+        throw new Error('No project selected');
+      }
+      if (!filePath) {
+        throw new Error('File path is required');
+      }
 
       try {
         const file = await apiClient.createFile(state.currentProject.id, {
@@ -244,13 +324,20 @@ export function AppProvider({ children }) {
         dispatch({ type: ActionTypes.SET_ACTIVE_FILE, payload: filePath });
         return file;
       } catch (error) {
-        actions.setError(error.message);
+        console.error('Create file error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to create file';
+        dispatch({ type: ActionTypes.SET_ERROR, payload: errorMessage });
         throw error;
       }
     }, [state.currentProject]),
 
     updateFile: useCallback(async (filePath, content) => {
-      if (!state.currentProject) return;
+      if (!state.currentProject) {
+        throw new Error('No project selected');
+      }
+      if (!filePath) {
+        throw new Error('File path is required');
+      }
 
       try {
         const file = await apiClient.updateFile(state.currentProject.id, {
@@ -263,19 +350,28 @@ export function AppProvider({ children }) {
         });
         return file;
       } catch (error) {
-        actions.setError(error.message);
+        console.error('Update file error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to update file';
+        dispatch({ type: ActionTypes.SET_ERROR, payload: errorMessage });
         throw error;
       }
     }, [state.currentProject]),
 
     deleteFile: useCallback(async (filePath) => {
-      if (!state.currentProject) return;
+      if (!state.currentProject) {
+        throw new Error('No project selected');
+      }
+      if (!filePath) {
+        throw new Error('File path is required');
+      }
 
       try {
         await apiClient.deleteFile(state.currentProject.id, filePath);
         dispatch({ type: ActionTypes.DELETE_FILE, payload: filePath });
       } catch (error) {
-        actions.setError(error.message);
+        console.error('Delete file error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete file';
+        dispatch({ type: ActionTypes.SET_ERROR, payload: errorMessage });
         throw error;
       }
     }, [state.currentProject]),
@@ -284,8 +380,12 @@ export function AppProvider({ children }) {
       dispatch({ type: ActionTypes.SET_ACTIVE_FILE, payload: filePath });
     }, []),
 
-    // Chat actions
+    // FIXED: Chat actions with proper file handling
     sendChatMessage: useCallback(async (message) => {
+      if (!message.trim()) {
+        throw new Error('Message cannot be empty');
+      }
+
       const userMessage = {
         id: uuidv4(),
         role: 'user',
@@ -296,7 +396,10 @@ export function AppProvider({ children }) {
       dispatch({ type: ActionTypes.ADD_CHAT_MESSAGE, payload: userMessage });
 
       try {
-        actions.setLoading(true);
+        dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+        
+        console.log('Sending chat message:', message);
+        
         const response = await apiClient.generateCode({
           prompt: message,
           type: 'react',
@@ -306,46 +409,82 @@ export function AppProvider({ children }) {
           }
         });
 
+        console.log('🎯 AI Response received:', response);
+
+        // CRITICAL: Handle the response structure correctly
+        let aiResponseData;
+        if (response.success && response.data) {
+          aiResponseData = response.data;
+        } else if (response.data) {
+          aiResponseData = response.data;
+        } else {
+          aiResponseData = response;
+        }
+
+        console.log('📝 Processing AI response data:', aiResponseData);
+
+        // Create AI message
         const aiMessage = {
           id: uuidv4(),
           role: 'assistant',
-          content: response.explanation || response.content,
-          files: response.files || [],
+          content: aiResponseData.explanation || aiResponseData.content || 'Code generated successfully',
+          files: aiResponseData.files || [],
           timestamp: new Date().toISOString()
         };
 
         dispatch({ type: ActionTypes.ADD_CHAT_MESSAGE, payload: aiMessage });
 
-        // Auto-create files if they don't exist
-        if (response.files && response.files.length > 0) {
-          for (const file of response.files) {
-            if (!state.files.has(file.path)) {
-              dispatch({ type: ActionTypes.ADD_FILE, payload: file });
+        // CRITICAL: Process and add files to the project
+        if (aiResponseData.files && Array.isArray(aiResponseData.files) && aiResponseData.files.length > 0) {
+          console.log(`📁 Processing ${aiResponseData.files.length} files:`, aiResponseData.files.map(f => f.path));
+          
+          for (const file of aiResponseData.files) {
+            if (file.path && file.content) {
+              console.log(`📄 Adding file: ${file.path} (${file.content.length} chars)`);
+              
+              // Add file to the project's file system
+              const fileData = {
+                path: file.path,
+                content: file.content,
+                language: file.language || 'javascript',
+                operation: file.operation || 'create',
+                size: file.content.length,
+                lastModified: new Date().toISOString()
+              };
+              
+              dispatch({ type: ActionTypes.ADD_FILE, payload: fileData });
             } else {
-              dispatch({ 
-                type: ActionTypes.UPDATE_FILE, 
-                payload: { path: file.path, updates: { content: file.content } } 
-              });
+              console.warn('Invalid file data:', file);
             }
           }
           
-          // Set the first generated file as active
-          dispatch({ type: ActionTypes.SET_ACTIVE_FILE, payload: response.files[0].path });
+          // Set the first generated file as active and switch to editor tab
+          if (aiResponseData.files[0] && aiResponseData.files[0].path) {
+            console.log('🎯 Setting active file:', aiResponseData.files[0].path);
+            dispatch({ type: ActionTypes.SET_ACTIVE_FILE, payload: aiResponseData.files[0].path });
+            dispatch({ type: ActionTypes.SET_ACTIVE_TAB, payload: 'editor' });
+          }
+        } else {
+          console.warn('⚠️ No files found in AI response');
         }
 
+        console.log('✅ Chat message processed successfully');
         return response;
       } catch (error) {
-        const errorMessage = {
+        console.error('❌ Chat message error:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to generate code';
+        
+        const errorMsg = {
           id: uuidv4(),
           role: 'assistant',
-          content: `Error: ${error.message}`,
+          content: `Error: ${errorMessage}`,
           timestamp: new Date().toISOString(),
           isError: true
         };
-        dispatch({ type: ActionTypes.ADD_CHAT_MESSAGE, payload: errorMessage });
+        dispatch({ type: ActionTypes.ADD_CHAT_MESSAGE, payload: errorMsg });
         throw error;
       } finally {
-        actions.setLoading(false);
+        dispatch({ type: ActionTypes.SET_LOADING, payload: false });
       }
     }, [state.currentProject, state.files]),
 

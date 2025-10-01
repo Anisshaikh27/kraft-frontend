@@ -17,10 +17,12 @@ const ProjectPage = () => {
 
   useEffect(() => {
     const initializeProject = async () => {
-      if (projectId && projectId !== 'new') {
-        // Load existing project
+      // Only proceed if we have a valid projectId or need to create new
+      if (projectId && projectId !== 'new' && projectId !== 'undefined') {
+        // Load existing project with valid ID
         try {
           setIsInitializing(true);
+          console.log('Loading project with ID:', projectId);
           await loadProject(projectId);
         } catch (error) {
           console.error('Failed to load project:', error);
@@ -29,26 +31,39 @@ const ProjectPage = () => {
         } finally {
           setIsInitializing(false);
         }
-      } else if (!currentProject) {
-        // Create new project
+      } else if (projectId === 'new' || !projectId || projectId === 'undefined') {
+        // Create new project only if explicitly 'new' or invalid ID
         try {
           setIsInitializing(true);
-          const project = await createProject({
+          console.log('Creating new project...');
+          const newProject = await createProject({
             name: 'New React Project',
             type: 'react-app',
             description: 'AI-generated React application'
           });
-          // Update URL with the new project ID
-          navigate(`/project/${project.id}`, { replace: true });
+          
+          // Ensure we got a valid project back
+          if (newProject && newProject.id) {
+            console.log('Project created with ID:', newProject.id);
+            // Update URL with the new project ID
+            navigate(`/project/${newProject.id}`, { replace: true });
+          } else {
+            console.error('Project creation failed - no ID returned');
+            throw new Error('Failed to create project - no ID returned');
+          }
         } catch (error) {
           console.error('Failed to create project:', error);
+          // Show error but don't redirect to avoid infinite loop
         } finally {
           setIsInitializing(false);
         }
       }
     };
 
-    initializeProject();
+    // Only initialize if we don't already have the right project loaded
+    if (!currentProject || (projectId && currentProject.id !== projectId)) {
+      initializeProject();
+    }
   }, [projectId, currentProject, loadProject, createProject, navigate]);
 
   const renderTabContent = () => {
@@ -88,7 +103,11 @@ const ProjectPage = () => {
       <div className="min-h-screen bg-background-primary flex items-center justify-center p-4">
         <ErrorMessage 
           message={error}
-          onRetry={() => window.location.reload()}
+          onRetry={() => {
+            // Clear error and try creating new project
+            navigate('/project/new', { replace: true });
+            window.location.reload();
+          }}
         />
       </div>
     );
@@ -105,7 +124,7 @@ const ProjectPage = () => {
             The requested project could not be loaded.
           </p>
           <button
-            onClick={() => navigate('/project/new')}
+            onClick={() => navigate('/project/new', { replace: true })}
             className="btn-primary"
           >
             Create New Project
@@ -144,6 +163,9 @@ const ProjectPage = () => {
           <div className="flex items-center gap-3">
             <span className="text-sm text-dark-500">
               {currentProject.name}
+            </span>
+            <span className="text-xs text-dark-400">
+              ID: {currentProject.id}
             </span>
             <div className="w-2 h-2 bg-green-400 rounded-full" title="Connected"></div>
           </div>
