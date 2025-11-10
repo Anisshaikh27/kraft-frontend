@@ -1,304 +1,216 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { RefreshCw, ExternalLink, Smartphone, Tablet, Monitor } from 'lucide-react';
+// src/components/preview/PreviewPanel.js
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAppState } from '../../context/AppContext';
-import LoadingSpinner from '../ui/LoadingSpinner';
+import { useWebContainer } from '../../context/WebContainerContext';
 
 const PreviewPanel = () => {
   const { files, currentProject } = useAppState();
-  const [previewContent, setPreviewContent] = useState('');
+  const { webContainer, isReady } = useWebContainer();
+  const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [viewportSize, setViewportSize] = useState('desktop');
-  const [error, setError] = useState(null);
-  const iframeRef = useRef(null);
+  const [error, setError] = useState('');
 
-  const viewportSizes = {
-    mobile: { width: '375px', height: '667px', icon: Smartphone },
-    tablet: { width: '768px', height: '1024px', icon: Tablet },
-    desktop: { width: '100%', height: '100%', icon: Monitor }
-  };
+  const filesArray = Array.from(files.values());
 
-  // Generate preview content from files
-  useEffect(() => {
-    if (files.size === 0) {
-      setPreviewContent('');
+  const writeFilesToContainer = useCallback(async () => {
+    if (!webContainer || !isReady || filesArray.length === 0) {
+      console.log('⏸️ Waiting for WebContainer or files...');
       return;
     }
 
-    generatePreview();
-  }, [files]);
-
-  const generatePreview = async () => {
-    setIsLoading(true);
-    setError(null);
-
     try {
-      // Find main files
-      const indexFile = files.get('public/index.html') || files.get('index.html');
-      const appFile = files.get('src/App.js') || files.get('App.js');
-      const cssFile = files.get('src/index.css') || files.get('index.css') || files.get('src/App.css');
+      setIsLoading(true);
+      setError('');
+      setUrl(''); // Reset URL
+      console.log('📝 Writing files to WebContainer...');
 
-      if (!appFile && !indexFile) {
-        setError('No displayable files found. Generate some React components first.');
-        return;
+      // Create directory structure first
+      const directories = new Set();
+      filesArray.forEach(file => {
+        const parts = file.path.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          directories.add(parts.slice(0, i).join('/'));
+        }
+      });
+
+      // Create directories
+      for (const dir of directories) {
+        try {
+          await webContainer.fs.mkdir(dir, { recursive: true });
+          console.log(`📁 Created directory: ${dir}`);
+        } catch (err) {
+          // Directory might already exist, ignore
+        }
       }
 
-      let htmlContent = '';
-
-      if (indexFile) {
-        // Use existing HTML file
-        htmlContent = indexFile.content;
-      } else {
-        // Generate basic HTML template
-        htmlContent = generateBasicHTML();
+      // Write each file to WebContainer
+      for (const file of filesArray) {
+        try {
+          await webContainer.fs.writeFile(file.path, file.content, 'utf-8');
+          console.log(`✅ Wrote: ${file.path} (${file.content.length} bytes)`);
+        } catch (err) {
+          console.error(`❌ Failed to write ${file.path}:`, err);
+        }
       }
 
-      // Inject React code and CSS
-      if (appFile) {
-        htmlContent = injectReactCode(htmlContent, appFile.content, cssFile?.content);
+      console.log('📦 Installing dependencies...');
+      const installProcess = await webContainer.spawn('npm', ['install']);
+      
+      // Pipe output to console
+      installProcess.output.pipeTo(
+        new WritableStream({
+          write(data) {
+            console.log('npm install:', data);
+          },
+        })
+      );
+
+      const installExitCode = await installProcess.exit;
+      if (installExitCode !== 0) {
+        throw new Error('npm install failed with exit code: ' + installExitCode);
       }
 
-      // Add necessary dependencies
-      htmlContent = addDependencies(htmlContent);
+      console.log('✅ Dependencies installed');
+      console.log('🚀 Starting dev server...');
+      
+      const devProcess = await webContainer.spawn('npm', ['run', 'dev']);
+      
+      // Pipe dev server output
+      devProcess.output.pipeTo(
+        new WritableStream({
+          write(data) {
+            console.log('npm run dev:', data);
+          },
+        })
+      );
 
-      setPreviewContent(htmlContent);
-    } catch (error) {
-      console.error('Preview generation error:', error);
-      setError('Failed to generate preview: ' + error.message);
-    } finally {
+      // Listen for server-ready event
+      webContainer.on('server-ready', (port, serverUrl) => {
+        console.log('✅ Server ready!');
+        console.log('   Port:', port);
+        console.log('   URL:', serverUrl);
+        setUrl(serverUrl);
+        setIsLoading(false);
+      });
+
+    } catch (err) {
+      console.error('❌ Preview error:', err);
+      setError(err.message || 'Failed to load preview');
       setIsLoading(false);
     }
-  };
+  }, [webContainer, isReady, filesArray]);
 
-  const generateBasicHTML = () => {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Preview - ${currentProject?.name || 'React App'}</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #fff;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-</body>
-</html>`;
-  };
-
-  const injectReactCode = (htmlContent, jsContent, cssContent) => {
-    // Extract component code and convert for browser execution
-    let processedJS = jsContent;
-
-    // Basic JSX to React.createElement transformation (simplified)
-    processedJS = processedJS
-      .replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '') // Remove imports
-      .replace(/export\s+default\s+/, '') // Remove export default
-      .replace(/className=/g, 'className=') // Ensure className is preserved
-      .replace(/onClick=/g, 'onClick=') // Preserve event handlers
-      .replace(/onChange=/g, 'onChange='); // Preserve event handlers
-
-    const scriptContent = `
-      <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-      <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-      <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-      ${cssContent ? `<style>${cssContent}</style>` : ''}
-      <script type="text/babel">
-        try {
-          ${processedJS}
-          
-          // Render the component
-          const root = ReactDOM.createRoot(document.getElementById('root'));
-          const AppComponent = typeof App !== 'undefined' ? App : 
-                              typeof LoginForm !== 'undefined' ? LoginForm :
-                              () => React.createElement('div', {style: {padding: '20px'}}, 
-                                'Component rendered successfully! Add more content in the chat.');
-          
-          root.render(React.createElement(AppComponent));
-        } catch (error) {
-          document.getElementById('root').innerHTML = 
-            '<div style="padding: 20px; color: red; font-family: monospace;">' +
-            '<h3>Preview Error:</h3><pre>' + error.message + '</pre></div>';
-          console.error('Preview error:', error);
-        }
-      </script>
-    `;
-
-    return htmlContent.replace('</body>', `${scriptContent}</body>`);
-  };
-
-  const addDependencies = (htmlContent) => {
-    // Add Tailwind CSS if not already present
-    if (!htmlContent.includes('tailwindcss') && files.has('tailwind.config.js')) {
-      const tailwindLink = '<script src="https://cdn.tailwindcss.com"></script>';
-      htmlContent = htmlContent.replace('</head>', `${tailwindLink}</head>`);
+  useEffect(() => {
+    if (filesArray.length > 0 && isReady && webContainer) {
+      writeFilesToContainer();
     }
+  }, [filesArray.length, isReady, webContainer]);
 
-    return htmlContent;
-  };
-
-  const handleRefresh = () => {
-    if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src;
-    }
-  };
-
-  const handleOpenInNewTab = () => {
-    if (previewContent) {
-      const blob = new Blob([previewContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-    }
-  };
-
-  const getCurrentViewport = () => viewportSizes[viewportSize];
-  const ViewportIcon = getCurrentViewport().icon;
-
-  if (!currentProject) {
+  // Not ready state
+  if (!isReady) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Project Loaded</h3>
-          <p className="text-gray-500">Create or load a project to see the preview.</p>
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-sm text-gray-600">Initializing WebContainer...</p>
+          <p className="text-xs text-gray-400 mt-2">This may take a moment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // No files state
+  if (filesArray.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8">
+          <div className="text-6xl mb-4">👁️</div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Preview Available</h3>
+          <p className="text-gray-500 mb-4">Generate some code to see the live preview</p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md">
+            <p className="text-sm text-blue-700">
+              💡 Ask the AI to create a React app to see it running here!
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center bg-red-50">
+        <div className="text-center p-6">
+          <div className="text-4xl mb-3">⚠️</div>
+          <h3 className="text-lg font-semibold text-red-700 mb-2">Preview Error</h3>
+          <p className="text-red-600 text-sm mb-4">{error}</p>
+          <button 
+            onClick={() => writeFilesToContainer()}
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm transition-colors"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-background-primary">
+    <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="flex-shrink-0 bg-background-secondary border-b border-dark-200 px-4 py-3">
+      <div className="flex-shrink-0 bg-gray-50 border-b border-gray-200 px-4 py-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h3 className="text-sm font-medium text-white">Live Preview</h3>
-            {files.size > 0 && (
-              <span className="text-xs text-dark-500 bg-background-tertiary px-2 py-1 rounded">
-                {files.size} file{files.size !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-
           <div className="flex items-center gap-2">
-            {/* Viewport Size Selector */}
-            <div className="flex items-center bg-background-tertiary rounded-lg p-1">
-              {Object.entries(viewportSizes).map(([size, config]) => {
-                const Icon = config.icon;
-                return (
-                  <button
-                    key={size}
-                    onClick={() => setViewportSize(size)}
-                    className={`p-2 rounded transition-colors ${
-                      viewportSize === size
-                        ? 'bg-primary-500 text-white'
-                        : 'text-dark-500 hover:text-white hover:bg-background-secondary'
-                    }`}
-                    title={`${size} view`}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={handleRefresh}
-              className="btn-secondary text-sm px-3 py-1 flex items-center gap-2"
+            <h3 className="text-sm font-semibold text-gray-700">Live Preview</h3>
+            {url && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {isLoading && (
+              <div className="flex items-center gap-1 text-xs text-gray-500">
+                <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                Building...
+              </div>
+            )}
+            <span className="text-xs text-gray-500">{filesArray.length} files</span>
+            <button 
+              onClick={() => writeFilesToContainer()}
               disabled={isLoading}
+              className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-
-            <button
-              onClick={handleOpenInNewTab}
-              className="btn-secondary text-sm px-3 py-1 flex items-center gap-2"
-              disabled={!previewContent}
-            >
-              <ExternalLink className="h-3 w-3" />
-              <span className="hidden sm:inline">Open</span>
+              ↻ Refresh
             </button>
           </div>
         </div>
       </div>
 
       {/* Preview Content */}
-      <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
-        {isLoading ? (
-          <div className="text-center">
-            <LoadingSpinner size="large" />
-            <p className="text-dark-500 mt-4">Generating preview...</p>
-          </div>
-        ) : error ? (
-          <div className="text-center max-w-md">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-              <h4 className="text-red-800 font-medium mb-2">Preview Error</h4>
-              <p className="text-red-600 text-sm mb-4">{error}</p>
-              <button
-                onClick={generatePreview}
-                className="btn-primary text-sm"
-              >
-                Retry
-              </button>
+      <div className="flex-1 relative">
+        {!url && isLoading ? (
+          <div className="h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
+            <div className="text-center">
+              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-base text-gray-700 font-medium mb-1">Building your project...</p>
+              <p className="text-sm text-gray-500">Installing dependencies and starting dev server</p>
             </div>
           </div>
-        ) : files.size === 0 ? (
-          <div className="text-center">
-            <div className="h-16 w-16 bg-background-secondary rounded-full flex items-center justify-center mx-auto mb-4">
-              <Monitor className="h-8 w-8 text-dark-500" />
-            </div>
-            <h3 className="text-lg font-medium text-dark-700 mb-2">
-              No Files to Preview
-            </h3>
-            <p className="text-dark-500 mb-4">
-              Generate some React components using the chat panel to see a live preview.
-            </p>
-          </div>
+        ) : url ? (
+          <iframe
+            src={url}
+            className="w-full h-full border-0"
+            title="Live Preview"
+            allow="cross-origin-isolated"
+          />
         ) : (
-          <div
-            className="bg-white rounded-lg shadow-lg border transition-all duration-300"
-            style={{
-              width: getCurrentViewport().width,
-              height: getCurrentViewport().height,
-              maxWidth: '100%',
-              maxHeight: '100%',
-            }}
-          >
-            {previewContent && (
-              <iframe
-                ref={iframeRef}
-                srcDoc={previewContent}
-                className="w-full h-full rounded-lg"
-                title="Preview"
-                sandbox="allow-scripts allow-same-origin"
-              />
-            )}
+          <div className="h-full flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+              <div className="text-4xl mb-3">⏳</div>
+              <p className="text-gray-500">Waiting for dev server...</p>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Status Bar */}
-      {previewContent && (
-        <div className="flex-shrink-0 bg-background-secondary border-t border-dark-200 px-4 py-2">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-4 text-dark-500">
-              <span>Viewport: {viewportSize}</span>
-              <span>Files: {files.size}</span>
-              <span>Size: {getCurrentViewport().width} × {getCurrentViewport().height}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-green-400">Live</span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
