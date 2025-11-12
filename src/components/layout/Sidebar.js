@@ -6,8 +6,13 @@ const Sidebar = () => {
   const { setActiveFile, setActiveTab } = useAppActions();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   
-  // Convert Map to array for display
-  const filesArray = Array.from(files.values());
+  // Handle both Map and array formats for files
+  let filesArray = [];
+  if (Array.isArray(files)) {
+    filesArray = files;
+  } else if (files instanceof Map) {
+    filesArray = Array.from(files.values());
+  }
   
   // Group files by directory for better organization
   const groupedFiles = groupFilesByDirectory(filesArray);

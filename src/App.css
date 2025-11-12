@@ -872,3 +872,62 @@ select.form-control {
   background-color: var(--color-primary);
   color: var(--color-btn-primary-text);
 }
+
+/* Sandpack Customization */
+.sp-layout {
+  height: 100%;
+}
+
+.sp-code-editor,
+.sp-preview,
+.sp-file-explorer {
+  background-color: #1e1e1e !important;
+  color: #d4d4d4 !important;
+}
+
+.sp-tabs {
+  background-color: #2d2d2d !important;
+  border-bottom: 1px solid #3e3e3e !important;
+}
+
+.sp-tab-button {
+  color: #a0a0a0 !important;
+  border-bottom: 2px solid transparent !important;
+}
+
+.sp-tab-button[aria-selected="true"] {
+  color: #fff !important;
+  border-bottom-color: #3b82f6 !important;
+}
+
+.sp-code-editor {
+  font-family: 'Fira Code', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.sp-preview {
+  background: #ffffff !important;
+}
+
+/* Scrollbar styling */
+.sp-code-editor::-webkit-scrollbar,
+.sp-file-explorer::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sp-code-editor::-webkit-scrollbar-track,
+.sp-file-explorer::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+.sp-code-editor::-webkit-scrollbar-thumb,
+.sp-file-explorer::-webkit-scrollbar-thumb {
+  background: #464646;
+  border-radius: 4px;
+}
+
+.sp-code-editor::-webkit-scrollbar-thumb:hover,
+.sp-file-explorer::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}

@@ -1,70 +1,101 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAppState, useAppActions } from '../context/AppContext';
 import ChatPanel from '../components/chat/ChatPanel';
 import CodeEditor from '../components/editor/CodeEditor';
 import PreviewPanel from '../components/preview/PreviewPanel';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorMessage from '../components/ui/ErrorMessage';
+import apiClient from '../services/apiClient';
 
 const ProjectPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { currentProject, isLoading, error, activeTab } = useAppState();
-  const { createProject, loadProject, setActiveTab } = useAppActions();
+  const location = useLocation();
+  const { currentProject, isLoading, error, activeTab, user } = useAppState();
+  const { setCurrentProject, loadProject, setActiveTab, setLoading, setError, setFiles, addChatMessage, clearChat } = useAppActions();
   
   const [isInitializing, setIsInitializing] = useState(false);
 
   useEffect(() => {
     const initializeProject = async () => {
-      // Only proceed if we have a valid projectId or need to create new
-      if (projectId && projectId !== 'new' && projectId !== 'undefined') {
-        // Load existing project with valid ID
+      // If no projectId is provided, redirect back to home
+      if (!projectId || projectId === 'undefined') {
+        console.log('No project ID provided, redirecting to home');
+        navigate('/', { replace: true });
+        return;
+      }
+
+      // We have a valid projectId - load the existing project
+      try {
+        setIsInitializing(true);
+        setLoading(true);
+        console.log('Loading project with ID:', projectId);
+        
+        const response = await apiClient.getProject(projectId);
+        const project = response.project || response;
+        
+        console.log('Project loaded:', project);
+        setCurrentProject(project);
+        
+        // Step 2: Load files for this project
         try {
-          setIsInitializing(true);
-          console.log('Loading project with ID:', projectId);
-          await loadProject(projectId);
-        } catch (error) {
-          console.error('Failed to load project:', error);
-          // Redirect to new project if loading fails
-          navigate('/project/new', { replace: true });
-        } finally {
-          setIsInitializing(false);
-        }
-      } else if (projectId === 'new' || !projectId || projectId === 'undefined') {
-        // Create new project only if explicitly 'new' or invalid ID
-        try {
-          setIsInitializing(true);
-          console.log('Creating new project...');
-          const newProject = await createProject({
-            name: 'New React Project',
-            type: 'react-app',
-            description: 'AI-generated React application'
-          });
+          const filesResponse = await apiClient.getFiles(projectId);
+          const projectFiles = filesResponse.files || filesResponse.data || [];
+          console.log(`Loaded ${projectFiles.length} files for project`);
           
-          // Ensure we got a valid project back
-          if (newProject && newProject.id) {
-            console.log('Project created with ID:', newProject.id);
-            // Update URL with the new project ID
-            navigate(`/project/${newProject.id}`, { replace: true });
-          } else {
-            console.error('Project creation failed - no ID returned');
-            throw new Error('Failed to create project - no ID returned');
-          }
-        } catch (error) {
-          console.error('Failed to create project:', error);
-          // Show error but don't redirect to avoid infinite loop
-        } finally {
-          setIsInitializing(false);
+          // Update context with loaded files
+          setFiles(projectFiles);
+        } catch (filesError) {
+          console.error('Failed to load files:', filesError);
+          // Don't fail the whole process if file loading fails
+          setFiles([]);
         }
+
+        // Step 3: Clear old chat messages and load chat history for this project
+        console.log('Clearing old chat messages...');
+        clearChat(); // Clear previous project's chat
+        
+        try {
+          const chatResponse = await apiClient.getChatMessages(projectId);
+          const messages = chatResponse.messages || chatResponse.data || [];
+          console.log(`Loaded ${messages.length} chat messages for project`);
+          
+          // Add each message to the context (in order)
+          for (const msg of messages) {
+            addChatMessage({
+              id: msg._id || Date.now(),
+              type: msg.type,
+              content: msg.content,
+              timestamp: new Date(msg.createdAt),
+            });
+          }
+          console.log('✓ Chat messages loaded successfully');
+        } catch (chatError) {
+          console.warn('Could not load chat history:', chatError);
+          // Don't fail if chat loading fails - it's not critical
+        }
+        
+      } catch (error) {
+        console.error('Failed to load project:', error);
+        const errorMsg = error.message || 'Failed to load project';
+        setError(errorMsg);
+        
+        // After 2 seconds, redirect to home
+        setTimeout(() => {
+          navigate('/', { replace: true });
+        }, 2000);
+      } finally {
+        setIsInitializing(false);
+        setLoading(false);
       }
     };
 
     // Only initialize if we don't already have the right project loaded
-    if (!currentProject || (projectId && currentProject.id !== projectId)) {
+    if (!currentProject || (projectId && currentProject._id !== projectId && currentProject.id !== projectId)) {
       initializeProject();
     }
-  }, [projectId, currentProject, loadProject, createProject, navigate]);
+  }, [projectId, currentProject, navigate, setCurrentProject, setLoading, setError, user]);
 
   const renderTabContent = () => {
     switch (activeTab) {

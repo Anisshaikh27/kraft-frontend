@@ -100,15 +100,10 @@ class APIClient {
 
   // ============ PROJECT ENDPOINTS ============
 
-  createProject(data) {
-    // Accept either object { name, description, type } or individual params
-    const projectData = typeof data === 'string' 
-      ? { name: data, description: arguments[1] || '', type: arguments[2] || 'react-app' }
-      : data;
-    
+  createProject(name, description, type = 'react-app') {
     return this.request('/projects', {
       method: 'POST',
-      body: JSON.stringify(projectData),
+      body: JSON.stringify({ name, description, type }),
     });
   }
 
@@ -124,15 +119,10 @@ class APIClient {
     });
   }
 
-  updateProject(projectId, updates) {
-    // Accept either object { name, description, type, status } or individual params
-    const updateData = typeof updates === 'string'
-      ? { name: updates, description: arguments[2] || '', type: arguments[3] || undefined, status: arguments[4] || undefined }
-      : updates;
-    
+  updateProject(projectId, name, description, type, status) {
     return this.request(`/projects/${projectId}`, {
       method: 'PUT',
-      body: JSON.stringify(updateData),
+      body: JSON.stringify({ name, description, type, status }),
     });
   }
 
@@ -189,34 +179,6 @@ class APIClient {
   getAIHealth() {
     return this.request('/ai/health', {
       method: 'GET',
-    });
-  }
-
-  // ============ CHAT ENDPOINTS ============
-
-  getChatMessages(projectId) {
-    return this.request(`/chats/${projectId}`, {
-      method: 'GET',
-    });
-  }
-
-  saveChatMessage(projectId, type, content, metadata = {}) {
-    return this.request(`/chats/${projectId}`, {
-      method: 'POST',
-      body: JSON.stringify({ type, content, metadata }),
-    });
-  }
-
-  saveBulkChatMessages(projectId, messages) {
-    return this.request(`/chats/bulk/${projectId}`, {
-      method: 'POST',
-      body: JSON.stringify({ messages }),
-    });
-  }
-
-  deleteChatMessages(projectId) {
-    return this.request(`/chats/${projectId}`, {
-      method: 'DELETE',
     });
   }
 }

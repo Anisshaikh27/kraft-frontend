@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Save, Download, Play } from 'lucide-react';
 import { useAppState, useAppActions } from '../../context/AppContext';
-import { utils } from '../../services/apiClient';
+import { getLanguageFromPath } from '../../utils/helpers';
 import LoadingSpinner from '../ui/LoadingSpinner';
 
 const CodeEditor = () => {
@@ -14,7 +14,19 @@ const CodeEditor = () => {
   const editorRef = useRef(null);
   const timeoutRef = useRef(null);
 
-  const currentFile = activeFile ? files.get(activeFile) : null;
+  // Handle both Map and array formats for files
+  const getFile = (filePath) => {
+    if (!filePath) return null;
+    
+    if (files instanceof Map) {
+      return files.get(filePath);
+    } else if (Array.isArray(files)) {
+      return files.find(f => f.path === filePath || f._id === filePath);
+    }
+    return null;
+  };
+
+  const currentFile = getFile(activeFile);
 
   // Load file content when active file changes
   useEffect(() => {
@@ -108,9 +120,9 @@ const CodeEditor = () => {
   };
 
   // Get file language
-  const getLanguage = () => {
+  const getFileLanguage = () => {
     if (!activeFile) return 'javascript';
-    return utils.getLanguageFromPath(activeFile);
+    return getLanguageFromPath(activeFile);
   };
 
   if (!currentProject) {
@@ -156,7 +168,7 @@ const CodeEditor = () => {
               <div className="w-2 h-2 bg-orange-400 rounded-full" title="Unsaved changes" />
             )}
             <div className="text-xs text-dark-500 bg-background-tertiary px-2 py-1 rounded">
-              {getLanguage()}
+              {getFileLanguage()}
             </div>
           </div>
 
@@ -204,7 +216,7 @@ const CodeEditor = () => {
         
         <Editor
           height="100%"
-          language={getLanguage()}
+          language={getFileLanguage()}
           value={editorContent}
           onChange={handleEditorChange}
           onMount={handleEditorDidMount}
@@ -234,7 +246,7 @@ const CodeEditor = () => {
           <div className="flex items-center gap-4 text-dark-500">
             <span>Lines: {editorContent.split('\n').length}</span>
             <span>Characters: {editorContent.length}</span>
-            <span>Language: {getLanguage()}</span>
+            <span>Language: {getFileLanguage()}</span>
           </div>
           
           <div className="flex items-center gap-2">

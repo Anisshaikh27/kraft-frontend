@@ -61,7 +61,7 @@ const ChatMessage = ({ message }) => {
           {message.files && message.files.length > 0 && (
             <div className="mt-4 pt-4 border-t border-dark-300">
               <div className="text-sm font-medium mb-2 text-dark-600">
-                Generated Files:
+                Generated Files ({message.files.length}):
               </div>
               <div className="space-y-2">
                 {message.files.map((file, index) => (
@@ -96,6 +96,20 @@ const ChatMessage = ({ message }) => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Show file count if only filesCount is available */}
+          {message.filesCount && !message.files && (
+            <div className="mt-4 pt-4 border-t border-dark-300">
+              <div className="text-sm text-dark-600">
+                <span className="inline-block px-3 py-1 bg-primary-600 text-white rounded-full text-xs font-medium">
+                  {message.filesCount} file{message.filesCount !== 1 ? 's' : ''} generated
+                </span>
+              </div>
+              <p className="text-xs text-dark-500 mt-2">
+                Check the preview tab to see the generated React app
+              </p>
             </div>
           )}
 
