@@ -317,18 +317,30 @@ export function AppProvider({ children }) {
         });
 
         console.log('AI Response:', aiResponse);
+        console.log('Full response structure:', JSON.stringify(aiResponse, null, 2));
 
-        // Extract generated content and files
+        // Extract generated content and files - be thorough with extraction
         const responseData = aiResponse.data || aiResponse;
-        const generatedCode = responseData.content || '';
-        const generatedFiles = responseData.files || [];
-        const assistantMessage = responseData.explanation || 'Code generated successfully!';
+        console.log('Response Data:', responseData);
+        
+        const generatedCode = responseData.content || responseData.explanation || '';
+        let generatedFiles = responseData.files || [];
+        
+        // Ensure files is an array and has proper structure
+        if (!Array.isArray(generatedFiles)) {
+          generatedFiles = [];
+        }
+        
+        console.log(`✓ Extracted ${generatedFiles.length} files from AI response`);
+        console.log('Files:', generatedFiles.map(f => ({ path: f.path, size: f.content?.length || 0 })));
+        
+        const assistantMessage = responseData.explanation || responseData.content || 'Code generated successfully!';
 
         // Add assistant response to chat
         const assistantMsg = {
           id: `msg-${Date.now()}-assistant`,
           type: 'assistant',
-          content: assistantMessage,
+          content: `Generated code successfully! ${generatedFiles.length} files created.`,
           timestamp: new Date(),
           code: generatedCode,
           filesCount: generatedFiles.length,
@@ -349,6 +361,23 @@ export function AppProvider({ children }) {
         if (generatedFiles && generatedFiles.length > 0) {
           try {
             console.log(`Saving ${generatedFiles.length} generated files...`);
+            
+            // First, add files to local state immediately for instant UI feedback
+            const filesToAdd = generatedFiles.map(file => ({
+              _id: `temp-${Date.now()}-${Math.random()}`,
+              projectId,
+              path: file.path,
+              content: file.content,
+              language: file.language || 'javascript',
+              operation: file.operation || 'create',
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }));
+            
+            setFiles(filesToAdd);
+            console.log(`✓ Added ${filesToAdd.length} files to local state`);
+            
+            // Then save to backend
             for (const file of generatedFiles) {
               try {
                 await apiClient.createFile(
@@ -365,15 +394,37 @@ export function AppProvider({ children }) {
             
             // Reload files to update the UI
             try {
+              console.log('📁 Fetching files from backend...');
               const filesResponse = await apiClient.getFiles(projectId);
-              const projectFiles = filesResponse.files || filesResponse.data || [];
-              setFiles(projectFiles);
-              console.log(`✓ Reloaded ${projectFiles.length} files`);
+              console.log('📁 Files response:', filesResponse);
+              
+              // Extract files from response - handle multiple formats
+              let projectFiles = [];
+              if (Array.isArray(filesResponse)) {
+                projectFiles = filesResponse;
+              } else if (filesResponse.files && Array.isArray(filesResponse.files)) {
+                projectFiles = filesResponse.files;
+              } else if (filesResponse.data && Array.isArray(filesResponse.data)) {
+                projectFiles = filesResponse.data;
+              }
+              
+              console.log(`✓ Found ${projectFiles.length} files:`, projectFiles.map(f => ({ path: f.path, size: f.content?.length || 0 })));
+              
+              // Only set files if we have any from backend
+              if (projectFiles.length > 0) {
+                setFiles(projectFiles);
+                console.log(`✓ Updated UI with ${projectFiles.length} files from backend`);
+              } else {
+                console.warn('⚠️ No files were found in the backend response, using local files');
+                // Keep the locally added files
+              }
               
               // Automatically switch to preview tab
               setActiveTab('preview');
             } catch (error) {
-              console.error('Failed to reload files:', error);
+              console.error('❌ Failed to reload files:', error);
+              // Still show the locally added files
+              setActiveTab('preview');
             }
           } catch (error) {
             console.error('Failed to save generated files:', error);
