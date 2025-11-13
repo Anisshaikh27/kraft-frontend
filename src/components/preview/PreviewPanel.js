@@ -1,5 +1,5 @@
 // src/components/preview/PreviewPanel.js
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppState } from '../../context/AppContext';
 import SandpackPreviewComponent from './SandpackPreview';
 
@@ -20,9 +20,11 @@ const PreviewPanel = () => {
       <div className="flex-shrink-0 bg-background-secondary border-b border-dark-200 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-dark-300">React Preview</h3>
-          <div className={`w-2 h-2 rounded-full ${filesArray.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+          <div className={`w-2 h-2 rounded-full ${filesArray.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`} />
         </div>
+
         <div className="flex items-center gap-2">
+          {/* Mode buttons */}
           <button
             onClick={() => setPreviewMode('sandpack')}
             className={`px-3 py-1 text-xs rounded transition-colors ${
@@ -58,7 +60,7 @@ const PreviewPanel = () => {
   );
 };
 
-// Legacy file preview component
+// --- Legacy Preview ---
 const LegacyFilePreview = ({ files }) => {
   const [selectedFile, setSelectedFile] = useState(null);
 
@@ -118,7 +120,9 @@ const LegacyFilePreview = ({ files }) => {
             <div className="border-b border-dark-200 px-4 py-3 bg-background-secondary">
               <div>
                 <p className="text-sm font-medium text-dark-300">{selectedFileData.path}</p>
-                <p className="text-xs text-dark-500 mt-1">{(selectedFileData.content || '').length} bytes</p>
+                <p className="text-xs text-dark-500 mt-1">
+                  {(selectedFileData.content || '').length} bytes
+                </p>
               </div>
             </div>
             <div className="flex-1 overflow-auto p-4">

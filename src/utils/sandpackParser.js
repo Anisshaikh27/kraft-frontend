@@ -8,8 +8,9 @@ const DEFAULT_PACKAGE_JSON = {
   name: 'react-app',
   version: '1.0.0',
   dependencies: {
-    react: '^18.2.0',
+    'react': '^18.2.0',
     'react-dom': '^18.2.0',
+    'react-router-dom': ''
   },
 };
 
